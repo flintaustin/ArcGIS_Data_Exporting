@@ -393,7 +393,7 @@ require([
   let entrySeq = 0;
 
   /* ---------------- Map ---------------- */
-  const map = new EsriMap({ basemap: cfg.basemap || "hybrid" });
+  const map = new EsriMap({ basemap: cfg.basemap || "satellite" });
   const selectionLayer = new GraphicsLayer({ title: "Selection", listMode: "hide" });
   map.add(selectionLayer);
   const view = new MapView({ container: "viewDiv", map, center: cfg.center, zoom: cfg.zoom });
