@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
+<script>
+/* =====================================================================
+   CONFIGURATION — edit these, or override them in the page URL:
+     ?group=<groupId>                 ArcGIS Online group to load
+     &layers=<url1>,<url2>            extra layers by service URL
+     &title=EMC%20data
+   ===================================================================== */
+window.EXPORTER_CONFIG = {
+  title: 'Data explorer',
+  // The 32-character ID from the group's URL:
+  // https://www.arcgis.com/home/group.html?id=THIS_PART
+  groupId: '',
+  layers: [],                  // optional extra layer/service URLs
+  startLayersOn: true,         // false = every layer starts turned off
+  allowAddingLayers: true,     // show "Add a layer by URL"
+  maxFeaturesPerLayer: 10000,  // export cap per layer
+  maxResultsListed: 100,       // rows shown in the query results list
+  // Optional OAuth app ID. Needed if your organization signs in with SSO.
+  appId: '',
+  portalUrl: 'https://www.arcgis.com'
+};
+</script>
+<script src="https://js.arcgis.com/4.33/"></script>
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    --navy: #0B0340;
+    --navy-hover: #1C1466;
+    --sky: #0B9FD5;
+    --sky-wash: #E3F5FC;
+    --ink: #17182B;
+    --ink-soft: #545A6E;
+    --line: #D4D9E2;
+    --panel: #F5F7FA;
+    --surface: #FFFFFF;
+    --ok: #1D6F42;
+    --warn: #8A5300;
+    --error: #B42318;
+    --radius: 6px;
+    font-family: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--surface); font-size: 15px; line-height: 1.45; }
+
+  .app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100%; }
+  .panel { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); }
+  #viewDiv { min-height: 0; height: 100%; }
+
+  header.bar { background: var(--sky); color: var(--navy); padding: 14px 20px 0; }
+  .bar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 1.3rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .group-name { margin: 2px 0 0; font-size: 0.9rem; font-weight: 500; }
+  .sign-in { flex: none; background: transparent; border: 1.5px solid var(--navy); color: var(--navy); padding: 5px 12px; font-weight: 600; font-size: 0.85rem; }
+  .sign-in:hover { background: var(--navy); color: #fff; }
+  .user { font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+
+  .tabs { display: flex; gap: 2px; margin-top: 14px; }
+  .tab {
+    flex: 1; padding: 9px 6px; border: none; border-radius: var(--radius) var(--radius) 0 0;
+    background: transparent; color: var(--navy); font-weight: 600;
+  }
+  .tab:hover { background: rgba(255,255,255,0.35); }
+  .tab[aria-selected="true"] { background: var(--panel); }
+
+  .tabpanel { flex: 1; overflow-y: auto; padding: 18px 20px 12px; }
+  h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; }
+  .section { margin-bottom: 20px; }
+  .hint { color: var(--ink-soft); font-size: 0.88rem; margin: 0 0 10px; }
+
+  /* Layers tab */
+  .service { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+  .service-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-weight: 600; }
+  .service-head .grow { flex: 1; overflow-wrap: anywhere; }
+  .sublayers { border-top: 1px solid var(--line); padding: 4px 12px 6px 12px; }
+  .toggle-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; cursor: pointer; }
+  .toggle-row .grow { flex: 1; overflow-wrap: anywhere; }
+  .meta { color: var(--ink-soft); font-size: 0.8rem; }
+
+  /* switch */
+  .switch { appearance: none; -webkit-appearance: none; flex: none; width: 34px; height: 20px; border-radius: 10px; margin: 0; cursor: pointer;
+    background: radial-gradient(circle 7px at 10px 50%, #fff 95%, transparent 100%), #B5BCC9; }
+  .switch:checked { background: radial-gradient(circle 7px at 24px 50%, #fff 95%, transparent 100%), var(--navy); }
+  .switch:indeterminate { background: radial-gradient(circle 7px at 17px 50%, #fff 95%, transparent 100%), var(--sky); }
+
+  /* forms */
+  select, input[type="text"], input[type="number"], input[type="date"], input[type="url"] {
+    font: inherit; font-size: 0.92rem; padding: 7px 9px; min-width: 0;
+    border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink);
+  }
+  select { padding-right: 6px; }
+  .full { width: 100%; }
+  .cond { display: grid; grid-template-columns: 1fr auto; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; margin-bottom: 6px; }
+  .cond-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cond-fields .value { grid-column: 1 / -1; }
+  .match { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 0.9rem; }
+  .choice { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; cursor: pointer; }
+  .choice small { display: block; color: var(--ink-soft); font-size: 0.82rem; }
+  .draw-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 0 26px; }
+  .draw-state { margin: 6px 0 0 26px; font-size: 0.85rem; color: var(--ink-soft); }
+  .btn-row { display: flex; gap: 8px; }
+
+  .results-summary { font-weight: 600; margin: 0 0 6px; }
+  .results { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); max-height: 280px; overflow-y: auto; }
+  .results li + li { border-top: 1px solid var(--line); }
+  .results button { display: block; width: 100%; text-align: left; background: none; border: none; border-radius: 0; padding: 8px 12px; color: var(--ink); }
+  .results button:hover, .results button.active { background: var(--sky-wash); }
+  .results .sub { display: block; color: var(--ink-soft); font-size: 0.8rem; }
+
+  /* Export tab */
+  .xlayer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+  .xlayer-top { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+  .xlayer-top label { flex: 1; display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
+  .badge { display: inline-block; margin-top: 2px; font-size: 0.78rem; padding: 1px 7px; border-radius: 10px; background: var(--panel); color: var(--ink-soft); }
+  .badge.q { background: var(--sky-wash); color: var(--navy); font-weight: 600; }
+  .fields { border-top: 1px solid var(--line); padding: 8px 12px 10px 38px; }
+  .field-list { max-height: 200px; overflow-y: auto; }
+  .field-list label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  .formats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .format input { position: absolute; opacity: 0; pointer-events: none; }
+  .format span { display: block; text-align: center; padding: 9px 4px; cursor: pointer; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font-weight: 500; }
+  .format span small { display: block; font-weight: 400; font-size: 0.75rem; color: var(--ink-soft); }
+  .format input:checked + span { border-color: var(--navy); background: var(--sky-wash); box-shadow: inset 0 0 0 1px var(--navy); }
+  .format input:focus-visible + span { outline: 2px solid var(--navy); outline-offset: 2px; }
+
+  button { font: inherit; cursor: pointer; border-radius: var(--radius); }
+  .btn { padding: 7px 13px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; }
+  .btn:hover { border-color: var(--navy); }
+  .primary { padding: 9px 16px; border: none; background: var(--navy); color: #fff; font-weight: 600; }
+  .primary:hover:not(:disabled) { background: var(--navy-hover); }
+  .primary:disabled { opacity: 0.6; cursor: progress; }
+  .wide { width: 100%; padding: 12px; font-size: 1rem; }
+  .link { background: none; border: none; padding: 2px 0; color: var(--navy); font-weight: 600; font-size: 0.85rem; text-decoration: underline; text-underline-offset: 2px; }
+  .icon-btn { background: none; border: none; padding: 4px 6px; color: var(--ink-soft); font-size: 0.85rem; }
+  .icon-btn:hover { color: var(--ink); text-decoration: underline; }
+
+  .status-bar { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 0.9rem; min-height: 1em; }
+  .status-bar:empty { display: none; }
+  .status-bar.ok { color: var(--ok); } .status-bar.warn { color: var(--warn); } .status-bar.error { color: var(--error); }
+
+  input[type="checkbox"]:not(.switch), input[type="radio"] { accent-color: var(--navy); width: 16px; height: 16px; margin: 0; flex: none; }
+  .choice input { margin-top: 3px; }
+  :focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 50vh; height: auto; min-height: 100%; }
+    .panel { border-right: none; border-bottom: 1px solid var(--line); }
+    .tabpanel { overflow: visible; }
+    #viewDiv { height: 50vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <header class="bar">
+      <div class="bar-top">
+        <div>
+          <h1 id="title">Data explorer</h1>
+          <p class="group-name" id="groupName"></p>
+        </div>
+        <button class="sign-in" id="signIn" type="button">Sign in</button>
+        <span class="user" id="userName" hidden></span>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-layers" aria-controls="panel-layers" aria-selected="true">Layers</button>
+        <button class="tab" role="tab" id="tab-query" aria-controls="panel-query" aria-selected="false" tabindex="-1">Query</button>
+        <button class="tab" role="tab" id="tab-export" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
+      </div>
+    </header>
+
+    <!-- LAYERS -->
+    <section class="tabpanel" role="tabpanel" id="panel-layers" aria-labelledby="tab-layers">
+      <div id="serviceList"></div>
+      <p class="hint" id="layersEmpty">Loading layers…</p>
+      <div class="section" id="addSection">
+        <h2>Add a layer by URL</h2>
+        <form class="btn-row" id="addForm">
+          <input type="url" id="layerUrl" class="full" aria-label="Layer or service URL" placeholder="FeatureServer or MapServer URL" required>
+          <button class="btn" type="submit">Add</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- QUERY -->
+    <section class="tabpanel" role="tabpanel" id="panel-query" aria-labelledby="tab-query" hidden>
+      <div class="section">
+        <h2><label for="qLayer">Layer</label></h2>
+        <select id="qLayer" class="full"></select>
+      </div>
+      <div class="section">
+        <h2>Conditions</h2>
+        <div class="match" id="matchRow" hidden>
+          <label for="qMatch">Show features that match</label>
+          <select id="qMatch"><option value="all">all conditions</option><option value="any">any condition</option></select>
+        </div>
+        <div id="conditions"></div>
+        <button class="link" type="button" id="addCond">Add a condition</button>
+        <p class="hint" id="noCondHint" style="margin-top:6px">No conditions: every feature in the area below will match.</p>
+      </div>
+      <div class="section">
+        <h2>Area</h2>
+        <label class="choice"><input type="radio" name="qArea" value="all" checked><span>Anywhere</span></label>
+        <label class="choice"><input type="radio" name="qArea" value="view"><span>Current map view</span></label>
+        <label class="choice"><input type="radio" name="qArea" value="drawn"><span>An area I draw</span></label>
+        <div id="drawTools" hidden>
+          <div class="draw-tools">
+            <button class="btn" type="button" data-draw="rectangle">Draw rectangle</button>
+            <button class="btn" type="button" data-draw="polygon">Draw shape</button>
+            <button class="icon-btn" type="button" id="clearDraw">Clear</button>
+          </div>
+          <p class="draw-state" id="drawState">No area drawn yet.</p>
+        </div>
+      </div>
+      <div class="section">
+        <label class="choice"><input type="checkbox" id="qShowOnly" checked><span>Show only matching features on the map</span></label>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="primary" type="button" id="runQuery">Run query</button>
+          <button class="btn" type="button" id="clearQuery">Clear query</button>
+        </div>
+      </div>
+      <div class="section" id="resultsSection" hidden>
+        <p class="results-summary" id="resultsSummary"></p>
+        <ul class="results" id="results"></ul>
+        <p class="hint" id="resultsMore" style="margin-top:6px"></p>
+        <button class="btn" type="button" id="toExport">Export these results</button>
+      </div>
+    </section>
+
+    <!-- EXPORT -->
+    <section class="tabpanel" role="tabpanel" id="panel-export" aria-labelledby="tab-export" hidden>
+      <div class="section">
+        <h2>Layers to export</h2>
+        <p class="hint">Only layers turned on in the Layers tab are listed. Layers with a query export just their results.</p>
+        <div id="exportList"></div>
+      </div>
+      <div class="section">
+        <h2>Layers without a query</h2>
+        <label class="choice"><input type="radio" name="xArea" value="all" checked><span>Export every feature</span></label>
+        <label class="choice"><input type="radio" name="xArea" value="view"><span>Export only what's in the current map view</span></label>
+      </div>
+      <div class="section">
+        <h2>Format</h2>
+        <div class="formats" role="radiogroup" aria-label="Format">
+          <label class="format"><input type="radio" name="format" value="kml" checked><span>KML<small>Google Earth</small></span></label>
+          <label class="format"><input type="radio" name="format" value="geojson"><span>GeoJSON<small>GIS &amp; web</small></span></label>
+          <label class="format"><input type="radio" name="format" value="csv"><span>CSV<small>Spreadsheets</small></span></label>
+        </div>
+      </div>
+      <button class="primary wide" id="exportBtn" type="button">Download</button>
+    </section>
+
+    <div class="status-bar" id="status" role="status" aria-live="polite"></div>
+  </aside>
+  <div id="viewDiv" aria-label="Map"></div>
+</div>
+
+<script>
+require([
+  'esri/Map', 'esri/views/MapView', 'esri/layers/FeatureLayer', 'esri/layers/GraphicsLayer',
+  'esri/widgets/Sketch/SketchViewModel', 'esri/request', 'esri/portal/Portal',
+  'esri/identity/IdentityManager', 'esri/identity/OAuthInfo'
+], function (Map, MapView, FeatureLayer, GraphicsLayer, SketchViewModel, esriRequest, Portal, IdentityManager, OAuthInfo) {
+
+  /* ================= Setup ================= */
+  const CONFIG = window.EXPORTER_CONFIG;
+  const params = new URLSearchParams(location.search);
+  const title = params.get('title') || CONFIG.title;
+  const groupId = (params.get('group') || CONFIG.groupId || '').trim();
+  const sharingUrl = CONFIG.portalUrl.replace(/\/+$/, '') + '/sharing';
+  document.title = title;
+  const $ = id => document.getElementById(id);
+  $('title').textContent = title;
+  $('addSection').hidden = !CONFIG.allowAddingLayers;
+
+  if (CONFIG.appId) {
+    IdentityManager.registerOAuthInfos([new OAuthInfo({ appId: CONFIG.appId, portalUrl: CONFIG.portalUrl, popup: false })]);
+  }
+
+  const statusEl = $('status');
+  function setStatus (type, text) { statusEl.className = 'status-bar ' + (type || ''); statusEl.textContent = text || ''; }
+
+  function el (tag, props, children) {
+    const n = Object.assign(document.createElement(tag), props || {});
+    (children || []).forEach(c => c != null && n.append(c));
+    return n;
+  }
+
+  const sketchLayer = new GraphicsLayer({ listMode: 'hide' });
+  const map = new Map({ basemap: 'topo-vector', layers: [sketchLayer] });
+  const view = new MapView({ container: 'viewDiv', map, center: [-98, 39], zoom: 4 });
+  const sketch = new SketchViewModel({
+    view, layer: sketchLayer,
+    polygonSymbol: { type: 'simple-fill', color: [11, 159, 213, 0.15], outline: { color: [11, 3, 64, 1], width: 2 } }
+  });
+  let drawnGeometry = null;
+
+  /* ================= State =================
+     services: [{ key, title, entries: [entry] }]
+     entry: { key, title, layer, service, fields (exportable), qFields (queryable),
+              selected:Set, exportChecked, expanded, query, form, distinct } */
+  const state = { services: [], zoomed: false };
+  const allEntries = () => state.services.flatMap(s => s.entries);
+  const EXCLUDED_TYPES = ['geometry', 'blob', 'raster', 'xml'];
+  const NUM_TYPES = ['small-integer', 'integer', 'big-integer', 'single', 'double', 'long', 'oid'];
+  const STR_TYPES = ['string', 'guid', 'global-id'];
+  const DATE_TYPES = ['date', 'timestamp-offset', 'date-only'];
+
+  function fieldKind (f) {
+    if (f.domain && f.domain.type === 'coded-value') return 'coded';
+    if (NUM_TYPES.includes(f.type)) return 'number';
+    if (DATE_TYPES.includes(f.type)) return 'date';
+    if (STR_TYPES.includes(f.type)) return 'string';
+    return null;
+  }
+
+  /* ================= Tabs ================= */
+  const tabs = ['layers', 'query', 'export'];
+  function showTab (name) {
+    tabs.forEach(t => {
+      const on = t === name;
+      $('tab-' + t).setAttribute('aria-selected', on);
+      $('tab-' + t).tabIndex = on ? 0 : -1;
+      $('panel-' + t).hidden = !on;
+    });
+    if (name === 'query') renderQueryLayerSelect();
+    if (name === 'export') renderExportList();
+  }
+  tabs.forEach((t, i) => {
+    const b = $('tab-' + t);
+    b.addEventListener('click', () => showTab(t));
+    b.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      showTab(next); $('tab-' + next).focus();
+    });
+  });
+
+  /* ================= Loading layers ================= */
+  async function serviceLayerIds (url) {
+    const info = (await esriRequest(url, { query: { f: 'json' }, responseType: 'json' })).data;
+    return (info.layers || [])
+      .filter(l => !(l.subLayerIds && l.subLayerIds.length) && (!l.type || l.type === 'Feature Layer'))
+      .map(l => l.id);
+  }
+
+  async function makeEntry (layer, service) {
+    await layer.load();
+    if (!layer.geometryType) return null; // tables can't be mapped or exported to KML
+    layer.outFields = ['*'];
+    if (!CONFIG.startLayersOn) layer.visible = false;
+    const fields = layer.fields.filter(f => !EXCLUDED_TYPES.includes(f.type));
+    return {
+      key: service.key + ':' + (layer.layerId ?? layer.url),
+      title: layer.title, layer, service, fields,
+      qFields: layer.fields.filter(f => fieldKind(f) && f.type !== 'oid'),
+      selected: new Set(fields.map(f => f.name)),
+      exportChecked: true, expanded: false, query: null,
+      form: { rows: [], match: 'all' }, distinct: {}
+    };
+  }
+
+  async function addService (service, layers) {
+    const settled = await Promise.allSettled(layers.map(l => makeEntry(l, service)));
+    service.entries = settled.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+    const failed = settled.filter(r => r.status === 'rejected').length;
+    if (!service.entries.length) return failed;
+    state.services.push(service);
+    // Insert at the bottom so earlier services draw on top; drawn area stays on top of all
+    service.entries.slice().reverse().forEach(e => map.add(e.layer, 0));
+    if (!state.zoomed) {
+      const ext = service.entries.map(e => e.layer.fullExtent).filter(Boolean)
+        .reduce((a, b) => (a && a.spatialReference.equals(b.spatialReference) ? a.union(b) : a || b), null);
+      if (ext) { state.zoomed = true; view.goTo(ext.expand(1.1)).catch(() => {}); }
+    }
+    renderServices();
+    return failed;
+  }
+
+  async function loadGroup () {
+    const portal = new Portal({ url: CONFIG.portalUrl });
+    await portal.load();
+    const g = (await portal.queryGroups({ query: `id:${groupId}` })).results[0];
+    if (!g) throw new Error("The group wasn't found, or it isn't shared with you. Try signing in.");
+    $('groupName').textContent = g.title;
+
+    const items = [];
+    let q = { query: '(type:"Feature Service" OR type:"Map Service")', num: 100, sortField: 'title', sortOrder: 'asc' };
+    while (q) {
+      const res = await g.queryItems(q);
+      items.push(...res.results);
+      q = res.nextQueryParams && res.nextQueryParams.start > 0 ? res.nextQueryParams : null;
+    }
+    if (!items.length) throw new Error('No layers you can see are shared to this group. Try signing in.');
+
+    let failed = 0;
+    for (const item of items) {
+      try {
+        const base = (item.url || '').replace(/\/+$/, '');
+        const single = base.match(/^(.*\/(?:FeatureServer|MapServer))\/(\d+)$/i);
+        const root = single ? single[1] : base;
+        const ids = single ? [Number(single[2])] : await serviceLayerIds(root);
+        const isFS = item.type === 'Feature Service';
+        const layers = ids.map(id => isFS
+          ? new FeatureLayer({ portalItem: { id: item.id, portal }, layerId: id })
+          : new FeatureLayer({ url: `${root}/${id}` }));
+        failed += await addService({ key: item.id, title: item.title, entries: [] }, layers);
+      } catch (e) { failed++; }
+    }
+    return failed;
+  }
+
+  async function addByUrl (raw) {
+    const url = raw.trim().split('?')[0].replace(/\/+$/, '');
+    if (!/^https:\/\//i.test(url)) throw new Error('Use a full https:// service URL.');
+    let root, ids;
+    const single = url.match(/^(.*\/(?:FeatureServer|MapServer))\/(\d+)$/i);
+    if (single) { root = single[1]; ids = [Number(single[2])]; }
+    else if (/\/(FeatureServer|MapServer)$/i.test(url)) { root = url; ids = await serviceLayerIds(url); }
+    else throw new Error("That isn't a FeatureServer or MapServer URL.");
+    const key = url.toLowerCase();
+    if (state.services.some(s => s.key === key)) return;
+    const name = decodeURIComponent(root.split('/').slice(-2, -1)[0] || 'Service').replace(/_/g, ' ');
+    const failed = await addService({ key, title: name, entries: [] }, ids.map(id => new FeatureLayer({ url: `${root}/${id}` })));
+    if (failed) throw new Error(`${failed} layer(s) in that service couldn't load.`);
+  }
+
+  $('addForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    setStatus('', 'Adding layer…');
+    try { await addByUrl($('layerUrl').value); $('layerUrl').value = ''; setStatus('', ''); }
+    catch (err) { setStatus('error', "Couldn't add that layer. " + (err.message || err)); }
+  });
+
+  /* ================= Sign in ================= */
+  async function refreshUser () {
+    try {
+      const cred = await IdentityManager.checkSignInStatus(sharingUrl);
+      $('userName').textContent = cred.userId;
+      $('userName').hidden = false;
+      $('signIn').hidden = true;
+      return true;
+    } catch { return false; }
+  }
+  $('signIn').addEventListener('click', async () => {
+    try {
+      await IdentityManager.getCredential(sharingUrl);
+      await refreshUser();
+      reloadAll();
+    } catch { /* cancelled */ }
+  });
+
+  function clearAll () {
+    allEntries().forEach(e => map.remove(e.layer));
+    state.services = []; state.zoomed = false;
+    renderServices();
+  }
+
+  async function reloadAll () {
+    clearAll();
+    $('layersEmpty').textContent = 'Loading layers…';
+    $('layersEmpty').hidden = false;
+    const problems = [];
+    if (groupId) {
+      try { const f = await loadGroup(); if (f) problems.push(`${f} layer(s) in the group couldn't load.`); }
+      catch (e) { problems.push(e.message || String(e)); }
+    }
+    const extra = [...CONFIG.layers, ...(params.get('layers') || '').split(',')].map(s => s.trim()).filter(Boolean);
+    for (const u of extra) { try { await addByUrl(u); } catch (e) { problems.push(e.message || String(e)); } }
+    if (!groupId && !extra.length) $('layersEmpty').textContent = 'No group is set up yet. Add a groupId in the page settings, or add a layer by URL below.';
+    else $('layersEmpty').textContent = 'No layers loaded.';
+    $('layersEmpty').hidden = state.services.length > 0;
+    setStatus(problems.length ? 'warn' : '', problems.join(' '));
+  }
+
+  /* ================= Layers tab ================= */
+  function renderServices () {
+    const list = $('serviceList');
+    list.replaceChildren();
+    $('layersEmpty').hidden = state.services.length > 0;
+    state.services.forEach(s => {
+      const card = el('div', { className: 'service' });
+      const on = s.entries.filter(e => e.layer.visible).length;
+
+      if (s.entries.length === 1) {
+        const e = s.entries[0];
+        card.append(toggleRow(e, s.title !== e.title ? s.title : null, 'service-head'));
+      } else {
+        const all = el('input', { type: 'checkbox', className: 'switch', checked: on === s.entries.length, indeterminate: on > 0 && on < s.entries.length });
+        all.setAttribute('role', 'switch');
+        all.setAttribute('aria-label', 'Turn all ' + s.title + ' layers on or off');
+        all.addEventListener('change', () => { s.entries.forEach(e => { e.layer.visible = all.checked; }); renderServices(); });
+        card.append(el('div', { className: 'service-head' }, [all, el('span', { className: 'grow', textContent: s.title })]));
+        const subs = el('div', { className: 'sublayers' });
+        s.entries.forEach(e => subs.append(toggleRow(e, null, 'toggle-row')));
+        card.append(subs);
+      }
+      list.append(card);
+    });
+  }
+
+  function toggleRow (e, subtitle, cls) {
+    const sw = el('input', { type: 'checkbox', className: 'switch', checked: e.layer.visible });
+    sw.setAttribute('role', 'switch');
+    sw.addEventListener('change', () => { e.layer.visible = sw.checked; renderServices(); });
+    const label = el('span', { className: 'grow', textContent: e.title }, [
+      subtitle ? el('span', { className: 'meta', textContent: ' ' + subtitle }) : null,
+      e.query ? el('span', { className: 'meta', textContent: ` (filtered: ${e.query.count.toLocaleString()})` }) : null
+    ]);
+    return el('label', { className: cls + ' toggle-row' }, [sw, label]);
+  }
+
+  /* ================= Query tab ================= */
+  const OPS = {
+    string: [['eq', 'is'], ['ne', 'is not'], ['contains', 'contains'], ['starts', 'starts with'], ['null', 'is blank'], ['notnull', 'has a value']],
+    number: [['eq', '='], ['ne', '≠'], ['gt', '>'], ['gte', '≥'], ['lt', '<'], ['lte', '≤'], ['null', 'is blank'], ['notnull', 'has a value']],
+    date: [['on', 'is on'], ['before', 'is before'], ['after', 'is after'], ['null', 'is blank'], ['notnull', 'has a value']],
+    coded: [['eq', 'is'], ['ne', 'is not'], ['null', 'is blank'], ['notnull', 'has a value']]
+  };
+  let highlight = null;
+
+  const currentEntry = () => allEntries().find(e => e.key === $('qLayer').value);
+
+  function renderQueryLayerSelect () {
+    const sel = $('qLayer');
+    const prev = sel.value;
+    sel.replaceChildren();
+    state.services.forEach(s => {
+      const og = el('optgroup', { label: s.title });
+      s.entries.forEach(e => og.append(el('option', { value: e.key, textContent: e.title + (e.query ? ' (query active)' : '') })));
+      sel.append(og);
+    });
+    if (prev && allEntries().some(e => e.key === prev)) sel.value = prev;
+    renderConditions();
+    renderResults(currentEntry());
+  }
+  $('qLayer').addEventListener('change', () => { renderConditions(); renderResults(currentEntry()); });
+
+  function renderConditions () {
+    const e = currentEntry();
+    const box = $('conditions');
+    box.replaceChildren();
+    if (!e) { $('noCondHint').hidden = true; return; }
+    $('qMatch').value = e.form.match;
+    $('matchRow').hidden = e.form.rows.length < 2;
+    $('noCondHint').hidden = e.form.rows.length > 0;
+
+    e.form.rows.forEach((row, i) => {
+      const f = e.qFields.find(x => x.name === row.field) || e.qFields[0];
+      row.field = f.name;
+      const kind = fieldKind(f);
+      if (!OPS[kind].some(o => o[0] === row.op)) row.op = OPS[kind][0][0];
+
+      const fieldSel = el('select'); fieldSel.setAttribute('aria-label', 'Field');
+      e.qFields.forEach(x => fieldSel.append(el('option', { value: x.name, textContent: x.alias || x.name })));
+      fieldSel.value = f.name;
+      fieldSel.addEventListener('change', () => { row.field = fieldSel.value; row.value = ''; renderConditions(); });
+
+      const opSel = el('select'); opSel.setAttribute('aria-label', 'Operator');
+      OPS[kind].forEach(([v, t]) => opSel.append(el('option', { value: v, textContent: t })));
+      opSel.value = row.op;
+      opSel.addEventListener('change', () => { row.op = opSel.value; renderConditions(); });
+
+      let valueCtl = null;
+      if (row.op !== 'null' && row.op !== 'notnull') {
+        if (kind === 'coded') {
+          valueCtl = el('select', { className: 'value' });
+          valueCtl.append(el('option', { value: '', textContent: 'Choose a value' }));
+          f.domain.codedValues.forEach(cv => valueCtl.append(el('option', { value: String(cv.code), textContent: cv.name })));
+        } else if (kind === 'date') {
+          valueCtl = el('input', { type: 'date', className: 'value' });
+        } else if (kind === 'number') {
+          valueCtl = el('input', { type: 'number', step: 'any', className: 'value', placeholder: 'Value' });
+        } else {
+          const listId = `dl-${i}`;
+          valueCtl = el('input', { type: 'text', className: 'value', placeholder: 'Type or pick a value' });
+          valueCtl.setAttribute('list', listId);
+          const dl = el('datalist', { id: listId });
+          fillDistinct(e, f, dl);
+          box.append(dl);
+        }
+        valueCtl.value = row.value || '';
+        valueCtl.setAttribute('aria-label', 'Value');
+        valueCtl.addEventListener('input', () => { row.value = valueCtl.value; });
+        valueCtl.addEventListener('change', () => { row.value = valueCtl.value; });
+        valueCtl.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); runQuery(); } });
+      }
+
+      const remove = el('button', { type: 'button', className: 'icon-btn', textContent: 'Remove' });
+      remove.addEventListener('click', () => { e.form.rows.splice(i, 1); renderConditions(); });
+
+      box.append(el('div', { className: 'cond' }, [el('div', { className: 'cond-fields' }, [fieldSel, opSel, valueCtl]), remove]));
+    });
+  }
+
+  async function fillDistinct (e, f, dl) {
+    if (!e.distinct[f.name]) {
+      e.distinct[f.name] = (async () => {
+        const q = e.layer.createQuery();
+        q.outFields = [f.name]; q.returnDistinctValues = true; q.returnGeometry = false;
+        q.orderByFields = [f.name]; q.num = 200;
+        try { return (await e.layer.queryFeatures(q)).features.map(g => g.attributes[f.name]).filter(v => v != null && v !== ''); }
+        catch { return []; }
+      })();
+    }
+    (await e.distinct[f.name]).forEach(v => dl.append(el('option', { value: String(v) })));
+  }
+
+  $('addCond').addEventListener('click', () => {
+    const e = currentEntry();
+    if (!e) return;
+    if (!e.qFields.length) return setStatus('warn', 'This layer has no fields that can be queried.');
+    e.form.rows.push({ field: e.layer.displayField && e.qFields.some(f => f.name === e.layer.displayField) ? e.layer.displayField : e.qFields[0].name, op: '', value: '' });
+    renderConditions();
+  });
+  $('qMatch').addEventListener('change', () => { const e = currentEntry(); if (e) e.form.match = $('qMatch').value; });
+
+  const sqlStr = v => "'" + String(v).replace(/'/g, "''") + "'";
+  const nextDay = d => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+
+  function clauseFor (e, row) {
+    const f = e.layer.fields.find(x => x.name === row.field);
+    const kind = fieldKind(f), n = f.name, label = f.alias || f.name;
+    if (row.op === 'null') return `${n} IS NULL`;
+    if (row.op === 'notnull') return `${n} IS NOT NULL`;
+    const v = (row.value ?? '').toString().trim();
+    if (!v) throw new Error(`Enter a value for "${label}".`);
+    const numeric = kind === 'number' || (kind === 'coded' && NUM_TYPES.includes(f.type));
+    const lit = numeric ? (isFinite(Number(v)) ? String(Number(v)) : null) : sqlStr(v);
+    if (lit === null) throw new Error(`"${label}" needs a number.`);
+    if (kind === 'date') {
+      if (f.type === 'date-only') {
+        return { on: `${n} = DATE '${v}'`, before: `${n} < DATE '${v}'`, after: `${n} > DATE '${v}'` }[row.op];
+      }
+      return {
+        on: `(${n} >= TIMESTAMP '${v} 00:00:00' AND ${n} < TIMESTAMP '${nextDay(v)} 00:00:00')`,
+        before: `${n} < TIMESTAMP '${v} 00:00:00'`,
+        after: `${n} >= TIMESTAMP '${nextDay(v)} 00:00:00'`
+      }[row.op];
+    }
+    const up = sqlStr(v.toUpperCase()).slice(1, -1);
+    switch (row.op) {
+      case 'eq': return `${n} = ${lit}`;
+      case 'ne': return `(${n} <> ${lit} OR ${n} IS NULL)`;
+      case 'contains': return `UPPER(${n}) LIKE '%${up}%'`;
+      case 'starts': return `UPPER(${n}) LIKE '${up}%'`;
+      case 'gt': return `${n} > ${lit}`;
+      case 'gte': return `${n} >= ${lit}`;
+      case 'lt': return `${n} < ${lit}`;
+      case 'lte': return `${n} <= ${lit}`;
+    }
+    throw new Error('Unknown condition.');
+  }
+
+  function buildWhere (e) {
+    const parts = e.form.rows.map(r => clauseFor(e, r));
+    if (!parts.length) return '1=1';
+    return parts.map(p => `(${p})`).join(e.form.match === 'any' ? ' OR ' : ' AND ');
+  }
+
+  // Combine a user where clause with the layer's own definition expression
+  function layerQuery (e, where, geometry) {
+    const q = e.layer.createQuery();
+    if (where && where !== '1=1') q.where = q.where && q.where !== '1=1' ? `(${q.where}) AND (${where})` : where;
+    if (geometry) { q.geometry = geometry; q.spatialRelationship = 'intersects'; }
+    return q;
+  }
+
+  // Area
+  const qAreaValue = () => document.querySelector('input[name="qArea"]:checked').value;
+  document.querySelectorAll('input[name="qArea"]').forEach(r => r.addEventListener('change', () => {
+    $('drawTools').hidden = qAreaValue() !== 'drawn';
+    sketchLayer.visible = qAreaValue() === 'drawn';
+  }));
+  document.querySelectorAll('[data-draw]').forEach(b => b.addEventListener('click', () => {
+    sketchLayer.removeAll(); drawnGeometry = null;
+    $('drawState').textContent = b.dataset.draw === 'rectangle' ? 'Click and drag on the map.' : 'Click to add corners. Double-click to finish.';
+    sketch.create(b.dataset.draw);
+  }));
+  $('clearDraw').addEventListener('click', () => {
+    sketch.cancel(); sketchLayer.removeAll(); drawnGeometry = null;
+    $('drawState').textContent = 'No area drawn yet.';
+  });
+  sketch.on('create', ev => {
+    if (ev.state === 'complete') { drawnGeometry = ev.graphic.geometry; $('drawState').textContent = 'Area set. Draw again to replace it.'; }
+  });
+
+  async function runQuery () {
+    const e = currentEntry();
+    if (!e) return setStatus('warn', 'Load a layer first.');
+    let where, geometry = null;
+    try { where = buildWhere(e); } catch (err) { return setStatus('warn', err.message); }
+    const area = qAreaValue();
+    if (area === 'view') geometry = view.extent.clone();
+    if (area === 'drawn') {
+      if (!drawnGeometry) return setStatus('warn', 'Draw an area on the map first, or choose a different area.');
+      geometry = drawnGeometry.clone();
+    }
+
+    const btn = $('runQuery');
+    btn.disabled = true; btn.textContent = 'Running…';
+    setStatus('', '');
+    try {
+      const count = await e.layer.queryFeatureCount(layerQuery(e, where, geometry));
+      const lq = layerQuery(e, where, geometry);
+      const nameField = e.layer.displayField || e.layer.objectIdField;
+      lq.outFields = [...new Set([e.layer.objectIdField, nameField])];
+      lq.returnGeometry = false;
+      lq.num = CONFIG.maxResultsListed;
+      let feats;
+      try { lq.orderByFields = [nameField]; feats = (await e.layer.queryFeatures(lq)).features; }
+      catch { lq.orderByFields = null; feats = (await e.layer.queryFeatures(lq)).features; }
+
+      e.query = { where, geometry, count, feats };
+      e.layer.visible = true;
+      await applyMapFilter(e);
+      renderServices();
+      renderQueryLayerSelect();
+    } catch (err) {
+      setStatus('error', 'The query failed. Check the conditions and try again. ' + (err.message || ''));
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run query';
+    }
+  }
+  $('runQuery').addEventListener('click', runQuery);
+
+  async function applyMapFilter (e) {
+    try {
+      const lv = await view.whenLayerView(e.layer);
+      lv.filter = e.query && $('qShowOnly').checked
+        ? { where: e.query.where, geometry: e.query.geometry, spatialRelationship: 'intersects' }
+        : null;
+    } catch { /* layer view not ready */ }
+  }
+  $('qShowOnly').addEventListener('change', () => { const e = currentEntry(); if (e) applyMapFilter(e); });
+
+  $('clearQuery').addEventListener('click', async () => {
+    const e = currentEntry();
+    if (!e) return;
+    e.query = null; e.form.rows = [];
+    if (highlight) { highlight.remove(); highlight = null; }
+    await applyMapFilter(e);
+    view.closePopup && view.closePopup();
+    renderServices();
+    renderQueryLayerSelect();
+    setStatus('', '');
+  });
+
+  function renderResults (e) {
+    const sec = $('resultsSection');
+    if (!e || !e.query) { sec.hidden = true; return; }
+    sec.hidden = false;
+    const { count, feats } = e.query;
+    $('resultsSummary').textContent = count === 1 ? '1 feature matches' : `${count.toLocaleString()} features match`;
+    $('resultsMore').textContent = count > feats.length ? `Showing the first ${feats.length}. Export to get all of them.` : '';
+    $('toExport').hidden = count === 0;
+    const list = $('results');
+    list.replaceChildren();
+    const nameField = e.layer.displayField || e.layer.objectIdField;
+    const nf = e.layer.fields.find(f => f.name === nameField);
+    feats.forEach(g => {
+      const oid = g.attributes[e.layer.objectIdField];
+      let name = g.attributes[nameField];
+      if (nf && nf.domain && nf.domain.type === 'coded-value') {
+        const m = nf.domain.codedValues.find(cv => cv.code === name); if (m) name = m.name;
+      }
+      const b = el('button', { type: 'button' }, [
+        el('span', { textContent: name != null && name !== '' ? String(name) : `Feature ${oid}` }),
+        el('span', { className: 'sub', textContent: `ID ${oid}` })
+      ]);
+      b.addEventListener('click', () => { list.querySelectorAll('.active').forEach(x => x.classList.remove('active')); b.classList.add('active'); zoomTo(e, oid); });
+      list.append(el('li', {}, [b]));
+    });
+  }
+
+  async function zoomTo (e, oid) {
+    try {
+      const q = e.layer.createQuery();
+      q.objectIds = [oid]; q.outFields = ['*']; q.returnGeometry = true; q.outSpatialReference = view.spatialReference;
+      const g = (await e.layer.queryFeatures(q)).features[0];
+      if (!g) return;
+      const lv = await view.whenLayerView(e.layer);
+      if (highlight) highlight.remove();
+      highlight = lv.highlight(oid);
+      const target = g.geometry.type === 'point' ? { target: g.geometry, zoom: Math.max(view.zoom, 15) } : g.geometry.extent.clone().expand(1.5);
+      await view.goTo(target);
+      const loc = g.geometry.type === 'point' ? g.geometry : g.geometry.extent.center;
+      if (view.openPopup) view.openPopup({ features: [g], location: loc });
+    } catch (err) { setStatus('error', "Couldn't zoom to that feature."); }
+  }
+
+  $('toExport').addEventListener('click', () => {
+    const e = currentEntry();
+    allEntries().forEach(x => { x.exportChecked = x === e; });
+    showTab('export');
+  });
+
+  /* ================= Export tab ================= */
+  function renderExportList () {
+    const list = $('exportList');
+    list.replaceChildren();
+    const visible = allEntries().filter(e => e.layer.visible);
+    if (!visible.length) {
+      list.append(el('p', { className: 'hint', textContent: 'No layers are turned on. Turn some on in the Layers tab.' }));
+      return;
+    }
+    visible.forEach(e => {
+      const id = 'x-' + e.key.replace(/[^\w]/g, '_');
+      const cb = el('input', { type: 'checkbox', id, checked: e.exportChecked });
+      cb.addEventListener('change', () => { e.exportChecked = cb.checked; });
+      const meta = el('span', { className: 'meta', textContent: ` ${e.selected.size} of ${e.fields.length} fields` });
+      const badge = e.query
+        ? el('span', { className: 'badge q', textContent: `Query results: ${e.query.count.toLocaleString()}` })
+        : el('span', { className: 'badge', textContent: 'No query' });
+      const label = el('label', { htmlFor: id }, [cb, el('span', {}, [el('span', { textContent: e.title }), el('br'), badge, meta])]);
+      const fieldsBtn = el('button', { type: 'button', className: 'icon-btn', textContent: e.expanded ? 'Hide fields' : 'Fields' });
+      fieldsBtn.setAttribute('aria-expanded', e.expanded);
+      fieldsBtn.addEventListener('click', () => { e.expanded = !e.expanded; renderExportList(); });
+      const card = el('div', { className: 'xlayer' }, [el('div', { className: 'xlayer-top' }, [label, fieldsBtn])]);
+
+      if (e.expanded) {
+        const all = el('button', { type: 'button', className: 'link', textContent: 'Select all' });
+        all.addEventListener('click', () => { e.fields.forEach(f => e.selected.add(f.name)); renderExportList(); });
+        const none = el('button', { type: 'button', className: 'link', textContent: 'Clear' });
+        none.addEventListener('click', () => { e.selected.clear(); renderExportList(); });
+        const fl = el('div', { className: 'field-list' });
+        e.fields.forEach(f => {
+          const c = el('input', { type: 'checkbox', checked: e.selected.has(f.name) });
+          c.addEventListener('change', () => { c.checked ? e.selected.add(f.name) : e.selected.delete(f.name); meta.textContent = ` ${e.selected.size} of ${e.fields.length} fields`; });
+          fl.append(el('label', {}, [c, el('span', { textContent: f.alias || f.name })]));
+        });
+        card.append(el('div', { className: 'fields' }, [el('div', { className: 'btn-row' }, [all, none]), fl]));
+      }
+      list.append(card);
+    });
+  }
+
+  const CHUNK = 500;
+  async function fetchFeatures (e, where, geometry, onProgress) {
+    let ids = (await e.layer.queryObjectIds(layerQuery(e, where, geometry))) || [];
+    const max = CONFIG.maxFeaturesPerLayer;
+    const truncated = ids.length > max;
+    ids = ids.slice(0, max);
+    const out = [...e.selected];
+    const features = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const q = e.layer.createQuery();
+      q.objectIds = ids.slice(i, i + CHUNK);
+      q.outFields = out.length ? out : [e.layer.objectIdField];
+      q.returnGeometry = true;
+      q.outSpatialReference = { wkid: 4326 };
+      features.push(...(await e.layer.queryFeatures(q)).features);
+      onProgress(features.length, ids.length);
+    }
+    return { features, truncated };
+  }
+
+  function formatValue (field, v) {
+    if (v === null || v === undefined) return null;
+    const d = field.domain;
+    if (d && d.type === 'coded-value') { const m = d.codedValues.find(cv => cv.code === v); if (m) return m.name; }
+    if (field.type === 'date' && typeof v === 'number') return new Date(v).toISOString();
+    return v;
+  }
+  function attrs (f, fields) {
+    const o = {};
+    fields.forEach(fl => { o[fl.name] = formatValue(fl, f.attributes ? f.attributes[fl.name] : null); });
+    return o;
+  }
+
+  const signedArea = r => { let s = 0; for (let i = 0; i < r.length - 1; i++) s += (r[i + 1][0] - r[i][0]) * (r[i + 1][1] + r[i][1]); return s / 2; };
+  function inRing (p, r) {
+    let inside = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function groupRings (rings) {
+    const polys = [], holes = [];
+    rings.forEach(r => signedArea(r) >= 0 ? polys.push({ outer: r, holes: [] }) : holes.push(r));
+    holes.forEach(h => { const p = polys.find(pp => inRing(h[0], pp.outer)); p ? p.holes.push(h) : polys.push({ outer: h.slice().reverse(), holes: [] }); });
+    return polys;
+  }
+  const xy = c => [c[0], c[1]];
+  function toGeoJSON (g) {
+    if (!g) return null;
+    switch (g.type) {
+      case 'point': return { type: 'Point', coordinates: [g.x, g.y] };
+      case 'multipoint': return { type: 'MultiPoint', coordinates: g.points.map(xy) };
+      case 'polyline': { const p = g.paths.map(path => path.map(xy)); return p.length === 1 ? { type: 'LineString', coordinates: p[0] } : { type: 'MultiLineString', coordinates: p }; }
+      case 'polygon': {
+        const gr = groupRings(g.rings.map(r => r.map(xy))).map(({ outer, holes }) => [outer.slice().reverse(), ...holes.map(h => h.slice().reverse())]);
+        return gr.length === 1 ? { type: 'Polygon', coordinates: gr[0] } : { type: 'MultiPolygon', coordinates: gr };
+      }
+      default: return null;
+    }
+  }
+
+  const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  const coords = cs => cs.map(c => c[0] + ',' + c[1]).join(' ');
+  function kmlGeom (g) {
+    if (!g) return '';
+    const ring = r => `<LinearRing><coordinates>${coords(r)}</coordinates></LinearRing>`;
+    const poly = rs => `<Polygon><outerBoundaryIs>${ring(rs[0])}</outerBoundaryIs>${rs.slice(1).map(h => `<innerBoundaryIs>${ring(h)}</innerBoundaryIs>`).join('')}</Polygon>`;
+    const line = c => `<LineString><tessellate>1</tessellate><coordinates>${coords(c)}</coordinates></LineString>`;
+    const pt = c => `<Point><coordinates>${c[0]},${c[1]}</coordinates></Point>`;
+    const multi = s => `<MultiGeometry>${s}</MultiGeometry>`;
+    switch (g.type) {
+      case 'Point': return pt(g.coordinates);
+      case 'MultiPoint': return multi(g.coordinates.map(pt).join(''));
+      case 'LineString': return line(g.coordinates);
+      case 'MultiLineString': return multi(g.coordinates.map(line).join(''));
+      case 'Polygon': return poly(g.coordinates);
+      case 'MultiPolygon': return multi(g.coordinates.map(poly).join(''));
+      default: return '';
+    }
+  }
+  function buildKml (docName, results) {
+    const folders = results.map(r => {
+      const nameField = r.layer.displayField || r.layer.objectIdField;
+      const pms = r.features.map(f => {
+        const a = attrs(f, r.fields);
+        const nm = (f.attributes && (f.attributes[nameField] ?? f.attributes[r.layer.objectIdField])) ?? '';
+        const data = r.fields.map(fl => `<Data name="${esc(fl.name)}"><displayName>${esc(fl.alias || fl.name)}</displayName><value>${esc(a[fl.name] ?? '')}</value></Data>`).join('');
+        return `<Placemark><name>${esc(nm)}</name>${data ? `<ExtendedData>${data}</ExtendedData>` : ''}${kmlGeom(toGeoJSON(f.geometry))}</Placemark>`;
+      }).join('\n');
+      return `<Folder><name>${esc(r.title)}</name>\n${pms}\n</Folder>`;
+    }).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(docName)}</name>\n${folders}\n</Document></kml>`;
+  }
+  function buildGeoJSON (r) {
+    return JSON.stringify({
+      type: 'FeatureCollection', name: r.title,
+      features: r.features.map(f => ({ type: 'Feature', id: f.attributes ? f.attributes[r.layer.objectIdField] : undefined, geometry: toGeoJSON(f.geometry), properties: attrs(f, r.fields) }))
+    });
+  }
+  function buildCsv (r) {
+    const isPt = r.layer.geometryType === 'point';
+    const cell = v => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const head = r.fields.map(f => cell(f.alias || f.name));
+    if (isPt) head.push('Longitude', 'Latitude');
+    const rows = r.features.map(f => {
+      const a = attrs(f, r.fields);
+      const row = r.fields.map(fl => cell(a[fl.name]));
+      if (isPt && f.geometry) row.push(cell(f.geometry.x), cell(f.geometry.y));
+      return row.join(',');
+    });
+    return '\uFEFF' + [head.join(','), ...rows].join('\r\n');
+  }
+
+  const MIME = { kml: 'application/vnd.google-earth.kml+xml', geojson: 'application/geo+json', csv: 'text/csv;charset=utf-8' };
+  const safeName = s => (s || 'export').replace(/[^\w\-. ]+/g, '_').trim().replace(/\s+/g, '_') || 'export';
+  function download (text, name, mime) {
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
+    const a = el('a', { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  $('exportBtn').addEventListener('click', async () => {
+    const targets = allEntries().filter(e => e.layer.visible && e.exportChecked);
+    if (!targets.length) return setStatus('warn', 'Check at least one layer to download.');
+    const viewOnly = document.querySelector('input[name="xArea"]:checked').value === 'view';
+    const format = document.querySelector('input[name="format"]:checked').value;
+    const btn = $('exportBtn');
+    btn.disabled = true; btn.textContent = 'Preparing download…';
+    try {
+      const results = [];
+      let truncated = false;
+      for (const e of targets) {
+        setStatus('', `Reading ${e.title}…`);
+        const where = e.query ? e.query.where : null;
+        const geometry = e.query ? e.query.geometry : (viewOnly ? view.extent.clone() : null);
+        const res = await fetchFeatures(e, where, geometry,
+          (n, total) => setStatus('', `Reading ${e.title}: ${n.toLocaleString()} of ${total.toLocaleString()}`));
+        truncated = truncated || res.truncated;
+        if (res.features.length) results.push({ title: e.title, layer: e.layer, fields: e.fields.filter(f => e.selected.has(f.name)), features: res.features });
+      }
+      const total = results.reduce((n, r) => n + r.features.length, 0);
+      if (!total) return setStatus('warn', 'Nothing to download. The chosen layers have no matching features.');
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (format === 'kml') {
+        const docName = results.length === 1 ? results[0].title : ($('groupName').textContent || title);
+        download(buildKml(docName, results), `${safeName(docName)}_${stamp}.kml`, MIME.kml);
+      } else {
+        for (const r of results) {
+          download(format === 'geojson' ? buildGeoJSON(r) : buildCsv(r), `${safeName(r.title)}_${stamp}.${format}`, MIME[format]);
+          await new Promise(res => setTimeout(res, 400));
+        }
+      }
+      setStatus(truncated ? 'warn' : 'ok', truncated
+        ? `Downloaded the first ${CONFIG.maxFeaturesPerLayer.toLocaleString()} features per layer. Narrow the query to get the rest.`
+        : `Downloaded ${total.toLocaleString()} features.`);
+    } catch (err) {
+      setStatus('error', 'Download failed: ' + (err.message || err));
+    } finally {
+      btn.disabled = false; btn.textContent = 'Download';
+    }
+  });
+
+  /* ================= Start ================= */
+  (async () => {
+    await refreshUser();
+    await reloadAll();
+  })();
+});
+</script>
+</body>
+</html>
