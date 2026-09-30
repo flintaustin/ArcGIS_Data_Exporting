@@ -1114,7 +1114,8 @@ require([
   $("#runExport").addEventListener("click", runExport);
 
   // Appended to export messages when embedded, in case the host iframe blocks downloads.
-  const EMBED_HINT = " If no file downloaded, use “Open in new window” at the top right and export from there.";
+  const EMBED_HINT = " If no file downloaded, allow pop-ups for this site, or use “Open in new window” at the top right and export from there.";
+  let dlWin = null;   // helper window for the export in progress (embedded only)
 
   function refreshExportScope() {
     const items = [...selection.values()];
@@ -1170,6 +1171,7 @@ require([
 
     $("#runExport").disabled = true;
     bar.hidden = false; setProgress(0);
+    dlWin = openDownloadWindow();   // must happen before any await
     try {
       if (scope === "package") { await exportPackage(format, date); return; }
 
@@ -1201,16 +1203,18 @@ require([
         setStatus(status, `Downloading ${n.toLocaleString()} of ${ids.length.toLocaleString()}…`);
       });
       const out = serialize(format, features, fl, title);
-      downloadBlob(new Blob([out.text], { type: out.mime }), `${slug(title)}_${date}.${out.ext}`);
+      const viaHelper = downloadBlob(new Blob([out.text], { type: out.mime }), `${slug(title)}_${date}.${out.ext}`, dlWin);
 
       let msg = `Exported ${features.length.toLocaleString()} feature${features.length === 1 ? "" : "s"}.`;
       if (total > ids.length) msg += ` ${(total - ids.length).toLocaleString()} more were left out by the ${cfg.maxFeaturesPerLayer.toLocaleString()}-feature limit.`;
-      if (isEmbedded) msg += EMBED_HINT;
+      if (isEmbedded && !viaHelper) msg += EMBED_HINT;
       setStatus(status, msg);
     } catch (err) {
       console.error(err);
       setStatus(status, `Export failed: ${err.details?.messages?.[0] || err.message}`, true);
     } finally {
+      closeDownloadWindow(dlWin);
+      dlWin = null;
       refreshExportScope();
       setTimeout(() => (bar.hidden = true), 800);
     }
@@ -1261,11 +1265,11 @@ require([
       blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
       filename = `selection_${date}.zip`;
     }
-    downloadBlob(blob, filename);
+    const viaHelper = downloadBlob(blob, filename, dlWin);
 
     let msg = `Exported ${written.toLocaleString()} features from ${items.length} layer${items.length === 1 ? "" : "s"} into ${filename}.`;
     if (written < grand) msg += ` ${(grand - written).toLocaleString()} selected features no longer exist on the server and were skipped.`;
-    if (isEmbedded) msg += EMBED_HINT;
+    if (isEmbedded && !viaHelper) msg += EMBED_HINT;
     setStatus(status, msg);
   }
 
@@ -1418,14 +1422,51 @@ ${body}
 </kml>`;
   }
 
-  // Direct download. Works standalone, and inside the Embed widget when its iframe
-  // sandbox includes allow-downloads. If the sandbox blocks it, the browser logs a
-  // console message and users can switch to "Open in new window".
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  /* ---------------- Downloads ----------------
+     The Experience Builder Embed widget sandboxes this page without allow-downloads,
+     so a download started inside the iframe is blocked. It does allow popups that
+     escape the sandbox, so when embedded we open a small helper window at click time
+     (before any await, so pop-up blockers allow it) and start the download there. */
+
+  const HELPER_STYLE = "font:16px system-ui,-apple-system,'Segoe UI',sans-serif;margin:24px;color:#1c2530";
+
+  function openDownloadWindow() {
+    if (!isEmbedded) return null;
+    let w = null;
+    try { w = window.open("", "_blank", "width=440,height=180"); } catch (e) { return null; }
+    if (!w) return null;   // blocked by a pop-up blocker
+    try {
+      w.document.title = "Preparing export…";
+      w.document.body.innerHTML = `<p style="${HELPER_STYLE}">Preparing your export… This window closes on its own.</p>`;
+      return w;
+    } catch (e) {
+      try { w.close(); } catch (_) {}
+      return null;         // not scriptable from here; fall back to a direct download
+    }
+  }
+
+  function closeDownloadWindow(w) {
+    if (w && !w.closed && !w.__exporterUsed) { try { w.close(); } catch (e) {} }
+  }
+
+  function downloadBlob(blob, filename, helperWin) {
+    const target = helperWin && !helperWin.closed ? helperWin : window;
+    const doc = target.document;
+    const url = target.URL.createObjectURL(blob);
+    const a = doc.createElement("a");
+    a.href = url;
+    a.download = filename;
+    doc.body.appendChild(a); a.click(); a.remove();
+
+    if (target !== window) {
+      target.__exporterUsed = true;
+      target.document.title = "Download started";
+      doc.body.innerHTML = `<p style="${HELPER_STYLE}">Downloading ${escapeHtml(filename)}. This window closes on its own.</p>`;
+      setTimeout(() => { try { target.close(); } catch (e) {} }, 4000);
+    } else {
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+    return target !== window;
   }
 
   /* ---------------- Helpers ---------------- */
