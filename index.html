@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Data Exporting</title>
+<title>Data Export</title>
 
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
 
 <script>
 
 window.EXPORTER_CONFIG = {
-  title: 'Data Exporting',
+  title: 'Data Export',
 
   groupId: '8345f85ae87e44238044f80e91fd4f4d',
   allowGroupSwitching: true,
@@ -420,7 +420,7 @@ require([
   /* ---------------- Pop-out link (embedded only) ---------------- */
   function updatePopOutLink() {
     if (!isEmbedded) return;
-    $("#popOut").href = location.href;   // keeps ?group=… so the same group opens
+    $("#popOut").href = location.href;
   }
   if (isEmbedded) {
     $("#popOut").hidden = false;
