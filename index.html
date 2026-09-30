@@ -12,24 +12,28 @@
 window.EXPORTER_CONFIG = {
   title: 'Data Exporting',
 
-  
   groupId: '8345f85ae87e44238044f80e91fd4f4d',
-  allowGroupSwitching: true,       
-  rememberGroup: true,              
+  allowGroupSwitching: true,
+  rememberGroup: true,
   groupItemTypes: ['Feature Service', 'Map Service'],
 
-  layers: [],                      
-  startLayersOn: true,              
-  allowAddingLayers: true,          
-  maxFeaturesPerLayer: 10000,       
-  maxResultsListed: 100,            
+  layers: [],
+  startLayersOn: true,
+  allowAddingLayers: true,
+  maxFeaturesPerLayer: 10000,
+  maxResultsListed: 100,
 
   basemap: 'topo-vector',
-  center: [-64.93, 18.34],          
+  center: [-64.93, 18.34],
   zoom: 12,
 
-
+  // Optional OAuth app. Leave blank to use the built-in username/password dialog,
+  // which works inside the Experience Builder Embed widget.
+  // If you set an appId: when the page is embedded, sign-in opens in a popup
+  // (arcgis.com's sign-in page can't load inside an iframe). Popup sign-in needs a
+  // callback page next to this file, registered as a redirect URI on the app.
   appId: '',
+  popupCallbackUrl: 'oauth-callback.html',
   portalUrl: 'https://www.arcgis.com'
 };
 </script>
@@ -64,12 +68,16 @@ window.EXPORTER_CONFIG = {
   }
   .header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
   header h1 { margin: 0; font-size: 1.6rem; font-weight: 700; }
+  .header-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
   .user-box { display: flex; align-items: center; gap: 10px; font-size: .9rem; font-weight: 600; white-space: nowrap; }
-  .user-box button {
+  .user-box[hidden] { display: none; }
+  .user-box button, .pop-out {
     background: rgba(255,255,255,.2); border: 0; color: var(--brand-ink);
-    font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    font: inherit; font-size: .9rem; font-weight: 600; padding: 4px 10px; border-radius: 6px;
+    cursor: pointer; text-decoration: none; white-space: nowrap;
   }
-  .user-box button:hover { background: rgba(255,255,255,.35); }
+  .user-box button:hover, .pop-out:hover { background: rgba(255,255,255,.35); }
+  .pop-out[hidden] { display: none; }
 
   .group-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; min-height: 32px; }
   .group-bar select {
@@ -92,7 +100,7 @@ window.EXPORTER_CONFIG = {
     padding: 12px 8px; border-radius: 10px 10px 0 0; cursor: pointer;
   }
   .tabs button[aria-selected="true"] { background: var(--panel); }
-  .tabs button:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+  .tabs button:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
     outline: 3px solid #ffb400; outline-offset: 2px;
   }
 
@@ -230,9 +238,13 @@ window.EXPORTER_CONFIG = {
 <header>
   <div class="header-top">
     <h1 id="appTitle">Data Exporting</h1>
-    <div class="user-box" id="userBox" hidden>
-      <span id="userName"></span>
-      <button type="button" id="signOutBtn">Sign out</button>
+    <div class="header-actions">
+      <a class="pop-out" id="popOut" href="#" target="_blank" rel="noopener" hidden
+         title="Open this tool in its own browser tab. Use this if exports don't download here.">Open in new window ↗</a>
+      <div class="user-box" id="userBox" hidden>
+        <span id="userName"></span>
+        <button type="button" id="signOutBtn">Sign out</button>
+      </div>
     </div>
   </div>
 
@@ -377,14 +389,17 @@ require([
   const $ = (s) => document.querySelector(s);
   const STORAGE_KEY = "exporter.groupId";
 
+  // True when this page runs inside an iframe (e.g. the Experience Builder Embed widget).
+  const isEmbedded = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+
   /* ---------------- State ---------------- */
   const state = {
     portal: null,
     groups: [],
     currentGroupId: null,
-    loadToken: 0,             
-    topLayers: [],            
-    entries: new Map()        
+    loadToken: 0,
+    topLayers: [],
+    entries: new Map()
   };
 
   const selection = new Map();
@@ -401,6 +416,16 @@ require([
   document.title = cfg.title;
   $("#appTitle").textContent = cfg.title;
   $("#addLayerBox").hidden = !cfg.allowAddingLayers;
+
+  /* ---------------- Pop-out link (embedded only) ---------------- */
+  function updatePopOutLink() {
+    if (!isEmbedded) return;
+    $("#popOut").href = location.href;   // keeps ?group=… so the same group opens
+  }
+  if (isEmbedded) {
+    $("#popOut").hidden = false;
+    updatePopOutLink();
+  }
 
   /* ---------------- Tabs ---------------- */
   const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -426,7 +451,10 @@ require([
   async function signIn() {
     const sharingUrl = cfg.portalUrl.replace(/\/$/, "") + "/sharing";
     if (cfg.appId) {
-      esriId.registerOAuthInfos([new OAuthInfo({ appId: cfg.appId, portalUrl: cfg.portalUrl, popup: false })]);
+      // arcgis.com's sign-in page refuses to load inside an iframe, so use a popup when embedded.
+      const info = new OAuthInfo({ appId: cfg.appId, portalUrl: cfg.portalUrl, popup: isEmbedded });
+      if (isEmbedded && cfg.popupCallbackUrl) info.popupCallbackUrl = cfg.popupCallbackUrl;
+      esriId.registerOAuthInfos([info]);
     }
     await esriId.checkSignInStatus(sharingUrl).catch(() => {});
     const portal = new Portal({ url: cfg.portalUrl, authMode: "immediate" });
@@ -465,6 +493,7 @@ require([
     select.innerHTML = groups.map((g) => `<option value="${g.id}">${escapeHtml(g.title)}</option>`).join("");
 
     const urlId = new URLSearchParams(location.search).get("group");
+    // Storage can be blocked or partitioned inside an iframe; the try/catch keeps that harmless.
     let saved = null;
     try { saved = cfg.rememberGroup ? localStorage.getItem(STORAGE_KEY) : null; } catch (e) {}
     const has = (id) => id && groups.some((g) => g.id === id);
@@ -494,7 +523,7 @@ require([
     setGroupStatus(isResync ? "Syncing…" : "Loading layers…");
 
     try {
-      clearSource("group");   
+      clearSource("group");
 
       const typeClause = cfg.groupItemTypes.map((t) => `type:"${t}"`).join(" OR ");
       const items = [];
@@ -524,6 +553,7 @@ require([
       const url = new URL(location.href);
       url.searchParams.set("group", groupId);
       history.replaceState(null, "", url);
+      updatePopOutLink();
 
       const n = items.length - failed;
       let msg = `${n} item${n === 1 ? "" : "s"} loaded · synced ${new Date().toLocaleTimeString()}`;
@@ -1083,6 +1113,9 @@ require([
   $("#exportFormat").addEventListener("change", refreshExportScope);
   $("#runExport").addEventListener("click", runExport);
 
+  // Appended to export messages when embedded, in case the host iframe blocks downloads.
+  const EMBED_HINT = " If no file downloaded, use “Open in new window” at the top right and export from there.";
+
   function refreshExportScope() {
     const items = [...selection.values()];
     const total = items.reduce((n, it) => n + it.oids.size, 0);
@@ -1172,6 +1205,7 @@ require([
 
       let msg = `Exported ${features.length.toLocaleString()} feature${features.length === 1 ? "" : "s"}.`;
       if (total > ids.length) msg += ` ${(total - ids.length).toLocaleString()} more were left out by the ${cfg.maxFeaturesPerLayer.toLocaleString()}-feature limit.`;
+      if (isEmbedded) msg += EMBED_HINT;
       setStatus(status, msg);
     } catch (err) {
       console.error(err);
@@ -1231,6 +1265,7 @@ require([
 
     let msg = `Exported ${written.toLocaleString()} features from ${items.length} layer${items.length === 1 ? "" : "s"} into ${filename}.`;
     if (written < grand) msg += ` ${(grand - written).toLocaleString()} selected features no longer exist on the server and were skipped.`;
+    if (isEmbedded) msg += EMBED_HINT;
     setStatus(status, msg);
   }
 
@@ -1383,29 +1418,15 @@ ${body}
 </kml>`;
   }
 
- function downloadBlob(blob, filename) {
-  // Check if we are embedded in an iframe
-  if (window.self !== window.top) {
-    const reader = new FileReader();
-    reader.onload = function() {
-      // Send the data payload, mime type, and filename to the Experience Builder parent
-      window.parent.postMessage({
-        type: 'GIS_DATA_EXPORT',
-        payload: reader.result, // Base64 / ArrayBuffer data
-        mimeType: blob.type,
-        filename: filename
-      }, '*');
-    };
-    reader.readAsDataURL(blob);
-    return;
+  // Direct download. Works standalone, and inside the Embed widget when its iframe
+  // sandbox includes allow-downloads. If the sandbox blocks it, the browser logs a
+  // console message and users can switch to "Open in new window".
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
-
-  // Fallback behavior if run standalone
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
   /* ---------------- Helpers ---------------- */
   function setStatus(el, text, isError = false) { el.textContent = text; el.classList.toggle("error", isError); }
