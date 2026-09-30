@@ -24,7 +24,7 @@ window.EXPORTER_CONFIG = {
   maxFeaturesPerLayer: 10000,       
   maxResultsListed: 100,            
 
-  basemap: 'satellite',
+  basemap: 'topo-vector',
   center: [-64.93, 18.34],          
   zoom: 12,
 
@@ -393,7 +393,7 @@ require([
   let entrySeq = 0;
 
   /* ---------------- Map ---------------- */
-  const map = new EsriMap({ basemap: cfg.basemap || "satellite" });
+  const map = new EsriMap({ basemap: cfg.basemap || "hybrid" });
   const selectionLayer = new GraphicsLayer({ title: "Selection", listMode: "hide" });
   map.add(selectionLayer);
   const view = new MapView({ container: "viewDiv", map, center: cfg.center, zoom: cfg.zoom });
@@ -1383,12 +1383,29 @@ ${body}
 </kml>`;
   }
 
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+ function downloadBlob(blob, filename) {
+  // Check if we are embedded in an iframe
+  if (window.self !== window.top) {
+    const reader = new FileReader();
+    reader.onload = function() {
+      // Send the data payload, mime type, and filename to the Experience Builder parent
+      window.parent.postMessage({
+        type: 'GIS_DATA_EXPORT',
+        payload: reader.result, // Base64 / ArrayBuffer data
+        mimeType: blob.type,
+        filename: filename
+      }, '*');
+    };
+    reader.readAsDataURL(blob);
+    return;
   }
+
+  // Fallback behavior if run standalone
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
   /* ---------------- Helpers ---------------- */
   function setStatus(el, text, isError = false) { el.textContent = text; el.classList.toggle("error", isError); }
